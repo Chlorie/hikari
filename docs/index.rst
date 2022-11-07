@@ -1,0 +1,6 @@
+Welcome to Hikari Reference!
+====================================
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Contents
