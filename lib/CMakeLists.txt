@@ -18,12 +18,17 @@ endfunction ()
 add_headers(HEADERS
     # Header files here (relative to ./include/hikari/)
     "export.h"
+    "api.h"
+    "types.h"
 )
 add_sources(SOURCES
     # Source files here (relative to ./src/)
+    "parser.cpp"
+    "types.cpp"
 )
 
-# find_package(fmt CONFIG REQUIRED)
+find_package(clu CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 target_sources(hikari PRIVATE ${HEADERS} ${SOURCES})
 target_set_options(hikari PRIVATE)
@@ -43,7 +48,9 @@ PUBLIC
 )
 target_link_libraries(hikari
 PUBLIC
-# fmt::fmt
+    clu::clu
+PRIVATE
+    fmt::fmt
 )
 
 include(CMakePackageConfigHelpers)

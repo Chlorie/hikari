@@ -14,12 +14,12 @@ option(BUILD_SHARED_LIBS "Build library as shared library" OFF)
 
 add_subdirectory(lib)
 
-option(hikari_BUILD_EXAMPLES "Build code examples" ON)
+option(HIKARI_BUILD_EXAMPLES "Build code examples" ON)
 if (HIKARI_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-option(BUILD_DOCS "Build documentation using Doxygen & Sphinx" OFF)
-if (BUILD_DOCS)
+option(HIKARI_BUILD_DOCS "Build documentation using Doxygen & Sphinx" OFF)
+if (HIKARI_BUILD_DOCS)
     add_subdirectory(docs)
 endif ()
