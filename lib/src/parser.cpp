@@ -3,22 +3,18 @@
 #include <unordered_map>
 #include <deque>
 #include <algorithm>
+#include <ranges>
+#include <tuple>
+#include <bit>
+
 #include <fmt/format.h>
 #include <clu/indices.h>
+#include <clu/parse.h>
 
 namespace hkr
 {
     namespace
     {
-        /*
-         * Music grammar reference:
-         *
-         * %120,4/4,7s,#1%  // Tempo=120, Time=4/4, Key=7 sharps, Transpose +1 semitone
-         * !a: ABC>!        // Set macro a to be "ABC>"
-         * !b: *a* DE *a*!  // Set macro b to be "ABC> DE ABC>"
-         * *a*;*b*|[*a*;*b*]
-         */
-
         class ParseError final : public std::runtime_error
         {
         public:
@@ -86,10 +82,10 @@ namespace hkr
                 auto& entry = map_entry();
                 const auto pos_in_macro = entry.positions[offset()];
                 if (pos_in_macro.is_map_entry())
-                    return fmt::format("in macro {}, defined at line {}, column {},\n{}", //
+                    return fmt::format("in macro '{}', defined at line {}, column {},\n{}", //
                         entry.name, entry.definition_position.line(), entry.definition_position.column(), //
                         pos_in_macro.to_string());
-                return fmt::format("in macro {}, at line {}, column {}", //
+                return fmt::format("in macro '{}', at line {}, column {}", //
                     entry.name, pos_in_macro.line(), pos_in_macro.column());
             }
             return fmt::format("at line {}, column {}", line(), column());
@@ -150,7 +146,7 @@ namespace hkr
             {
                 std::string res;
                 res.reserve(text_.size());
-                std::size_t line = 0, column = 0;
+                std::size_t line = 1, column = 1;
                 for (const char ch : text_)
                 {
                     switch (ch)
@@ -158,7 +154,7 @@ namespace hkr
                         case '\r': continue;
                         case '\n':
                             line++;
-                            column = 0;
+                            column = 1;
                             continue;
                         case ' ': column++; continue;
                         case '\t': column += 4; continue;
@@ -175,7 +171,7 @@ namespace hkr
             void append_text_to_map(TextPositionMap& map, const std::string_view view) const
             {
                 if (map.content.size() + view.size() > max_macro_length_)
-                    throw ParseError(fmt::format("{} expands exceeding the character limit of {} characters, {}", //
+                    throw ParseError(fmt::format("{} expands exceeding the character limit of {}, {}", //
                         map.name.empty() ? "Preprocessed text" : fmt::format("Macro '{}'", map.name), max_macro_length_,
                         original_pos_[offset_of(view)].to_string()));
                 map.content += view;
@@ -192,8 +188,14 @@ namespace hkr
                 else
                 {
                     auto& macro_map = *iter->second;
-                    map.content += macro_map.content;
-                    for (const auto [i] : clu::indices(macro_map.content.size()))
+                    const std::string_view view = macro_map.content;
+                    if (map.content.size() + view.size() > max_macro_length_)
+                        throw ParseError(fmt::format("{} expands exceeding the character limit of {}, {}", //
+                            map.name.empty() ? "Preprocessed text" : fmt::format("Macro '{}'", map.name),
+                            max_macro_length_, original_pos_[offset_of(macro)].to_string()));
+
+                    map.content += view;
+                    for (const auto [i] : clu::indices(view.size()))
                         map.positions.emplace_back(macro_map, i);
                 }
             }
@@ -274,12 +276,145 @@ namespace hkr
 
             Music parse()
             {
-                // TODO
-                return {};
+                std::string_view text = text_.text.content;
+                while (!text.empty())
+                {
+                    allow_measure_attrs_ = true;
+                    while (parse_attributes(text)) {}
+                    // Parse section
+                }
+                return std::move(music_);
             }
 
         private:
             PreprocessedText text_;
+            Music music_;
+            bool allow_measure_attrs_ = false;
+            Measure::Attributes measure_attrs_;
+            Chord::Attributes chord_attrs_;
+            int transposition_ = 0;
+
+            std::size_t offset_of(const std::string_view view) const noexcept
+            {
+                return static_cast<std::size_t>(view.data() - text_.text.content.data());
+            }
+
+            TextPosition pos_of(const std::string_view view, const std::size_t offset = 0) const noexcept
+            {
+                return text_.text.positions[offset_of(view) + offset];
+            }
+
+            /* Attributes */
+
+            bool parse_attributes(std::string_view& text)
+            {
+                if (!text.starts_with('%'))
+                    return false;
+                const auto idx = text.find('%', 1);
+                if (idx == npos)
+                    throw ParseError("Attribute specification block is not closed with another '%', beginning " +
+                        pos_of(text).to_string());
+                std::string_view attrs_view = text.substr(1, idx - 1);
+                text.remove_prefix(idx + 1);
+                for (const auto view : std::views::split(attrs_view, ","))
+                    parse_one_attribute(view);
+                return true;
+            }
+
+            void parse_one_attribute(const std::string_view text)
+            {
+                if (text.empty())
+                    throw ParseError("Empty attribute found " + pos_of(text).to_string());
+                if (text[0] == '#' || text[0] == 'b')
+                    parse_transposition(text);
+                else if (text.find('/') != npos)
+                    parse_time_signature(text);
+                else if (text.back() == 's' || text.back() == 'f')
+                    parse_key_signature(text);
+                else
+                    parse_tempo(text);
+            }
+
+            void parse_transposition(std::string_view text)
+            {
+                const int sign = text[0] == '#' ? 1 : -1;
+                text.remove_prefix(1);
+                if (const auto opt = clu::parse<int>(text); //
+                    !opt || *opt < -12 || *opt > 12)
+                    throw ParseError(fmt::format("Expecting an integer between -12 and 12 after "
+                                                 "transposition indicator '{}', but found '{}' {}",
+                        sign == 1 ? '#' : 'b', text, pos_of(text).to_string()));
+                else
+                    transposition_ = *opt;
+            }
+
+            void parse_time_signature(const std::string_view text)
+            {
+                if (!allow_measure_attrs_)
+                    throw ParseError("Time signatures should only appear at the beginning of "
+                                     "bars, but got a key signature in the middle of a bar " +
+                        pos_of(text).to_string());
+
+                const auto [partial, num_view, den_view] = [&]
+                {
+                    const auto slash = text.find('/'); // not npos
+                    const bool p = text.size() > slash + 2 && text[slash + 2] == '/';
+                    return std::tuple(p, text.substr(0, slash), text.substr(slash + (p ? 2 : 1)));
+                }();
+
+                const auto check_number = [&](const std::string_view num_text, const std::string_view name)
+                {
+                    const auto opt = clu::parse<int>(num_text);
+                    if (!opt || *opt <= 0 || *opt > 128)
+                        throw ParseError(fmt::format("The {} of a time signature should be a positive integer "
+                                                     "no greater than 128, but got '{}' {}",
+                            name, num_text, pos_of(num_text).to_string()));
+                    return *opt;
+                };
+
+                const int num = check_number(num_view, "numerator");
+                const int den = check_number(den_view, "denominator");
+
+                if (!std::has_single_bit(static_cast<unsigned>(den)))
+                    throw ParseError(fmt::format("The denominator of a time signature should be "
+                                                 "a power of 2, but got {} {}",
+                        den, pos_of(den_view).to_string()));
+
+                (partial ? measure_attrs_.partial : measure_attrs_.time) = Time{num, den};
+            }
+
+            void parse_key_signature(std::string_view text)
+            {
+                if (!allow_measure_attrs_)
+                    throw ParseError("Key signatures should only appear at the beginning of "
+                                     "bars, but got a key signature in the middle of a bar " +
+                        pos_of(text).to_string());
+                const int sign = text.back() == 's' ? 1 : -1;
+                text.remove_suffix(1);
+                const auto opt = clu::parse<int>(text);
+                if (!opt)
+                    throw ParseError(fmt::format("A key signature specification should be a number followed by "
+                                                 "'s' or 'f' to indicate the amount of sharps or flats in that "
+                                                 "key signature, but got {}{} {}",
+                        text, sign == 1 ? 's' : 'f', pos_of(text).to_string()));
+                const int num = *opt;
+                if (num < 0 || num > 7)
+                    throw ParseError(fmt::format("The amount of sharps or flats in a key signature should be "
+                                                 "between 0 and 7, but got {} {}",
+                        num, pos_of(text).to_string()));
+                measure_attrs_.key = num * sign;
+            }
+
+            void parse_tempo(const std::string_view text)
+            {
+                if (const auto opt = clu::parse<float>(text); !opt)
+                    throw ParseError(fmt::format("Unknown attribute '{}' {}", text, pos_of(text).to_string()));
+                else if (const float tempo = *opt; tempo > 1000 || tempo < 10)
+                    throw ParseError(fmt::format("Tempo markings should be between 10 and 1000, but got {} {}", tempo,
+                        pos_of(text).to_string()));
+                else
+                    chord_attrs_.tempo = tempo;
+            }
         };
     } // namespace
 

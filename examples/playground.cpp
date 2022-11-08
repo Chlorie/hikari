@@ -7,18 +7,11 @@ int main()
     try
     {
         const auto music = hkr::parse_music(R"(
-%120,4/4,7s,#1%
-!a: ABC>!
-!b: *a* DE *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-!a: *a* *a* *a* *a*!
-*a*;*b*|[*a*;*b*]
+!a: %1200%!
+!b: *a*! !c: *b*! !d: *c*!
+!e: *d*! !f: *e*! !g: *f*!
+!h: *g*!
+*h*
 )");
     }
     catch (const std::exception& exc)
