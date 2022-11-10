@@ -1,5 +1,7 @@
 #include "hikari/types.h"
 
+#include <stdexcept>
+
 namespace hkr
 {
     namespace
@@ -35,7 +37,7 @@ namespace hkr
         }
     } // namespace
 
-    Note Note::transposed_up(int semitones) noexcept
+    Note Note::transposed_up(int semitones) const noexcept
     {
         if (semitones == 0)
             return *this;
@@ -44,11 +46,11 @@ namespace hkr
         Note result = *this;
         result.octave += semitones / 12;
         semitones %= 12;
-        static constexpr int intervals[]{0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6};
+        static constexpr int intervals[]{0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
         return transpose_up_impl(result, semitones, intervals[semitones]);
     }
 
-    Note Note::transposed_down(int semitones) noexcept
+    Note Note::transposed_down(int semitones) const noexcept
     {
         if (semitones == 0)
             return *this;
@@ -59,5 +61,30 @@ namespace hkr
         semitones %= 12;
         static constexpr int intervals[]{0, -1, -1, -2, -2, -3, -3, -4, -5, -5, -6, -6};
         return transpose_up_impl(result, semitones, intervals[semitones]);
+    }
+
+    std::int8_t Note::pitch_id() const
+    {
+        const int value = values[static_cast<int>(base)] + (octave + 1) * 12;
+        if (value < 0 || value > 127)
+            throw std::out_of_range("Note value must be between 0 and 127");
+        return static_cast<std::int8_t>(value);
+    }
+
+    void Measure::Attributes::merge_with(const Attributes& other)
+    {
+        if (other.key)
+            key = other.key;
+        if (other.time)
+            time = other.time;
+        if (other.partial)
+            partial = other.partial;
+    }
+
+    std::pair<std::size_t, std::size_t> Section::beat_index_range_of_measure(const std::size_t measure) const
+    {
+        const auto start = measures[measure].start_beat;
+        const auto stop = measures.size() == measure + 1 ? staves[0].size() : measures[measure + 1].start_beat;
+        return {start, stop};
     }
 } // namespace hkr

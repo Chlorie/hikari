@@ -24,8 +24,10 @@ namespace hkr
         int octave;
         int accidental;
 
-        Note transposed_up(int semitones) noexcept;
-        Note transposed_down(int semitones) noexcept;
+        Note transposed_up(int semitones) const noexcept;
+        Note transposed_down(int semitones) const noexcept;
+
+        std::int8_t pitch_id() const;
     };
 
     struct HIKARI_API Chord
@@ -36,11 +38,13 @@ namespace hkr
         };
 
         std::vector<Note> notes;
+        bool sustained = false;
         Attributes attributes;
     };
 
     using Voice = std::vector<Chord>;
     using Beat = std::vector<Voice>;
+    using Staff = std::vector<Beat>;
 
     struct HIKARI_API Measure
     {
@@ -49,13 +53,22 @@ namespace hkr
             std::optional<int> key;
             std::optional<Time> time;
             std::optional<Time> partial;
+
+            void merge_with(const Attributes& other);
+            bool is_null() const noexcept { return !key && !time && !partial; }
         };
 
-        std::vector<Beat> beats;
+        std::size_t start_beat = 0;
         Attributes attributes;
     };
 
-    using Staff = std::vector<Measure>;
-    using Section = std::vector<Staff>;
+    struct HIKARI_API Section
+    {
+        std::vector<Staff> staves;
+        std::vector<Measure> measures;
+
+        std::pair<std::size_t, std::size_t> beat_index_range_of_measure(std::size_t measure) const;
+    };
+
     using Music = std::vector<Section>;
 } // namespace hkr
