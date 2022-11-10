@@ -8,8 +8,8 @@ But due to the hackiness of the original code, the conversion from notation to s
 
 ## Plans
 
-- [ ] Basic grammar
+- [x] Basic grammar
 - [x] Macros
-- [ ] Better diagnostics
+- [x] Better diagnostics
 - [ ] Repeats
 - [ ] Conversion to Lilypond

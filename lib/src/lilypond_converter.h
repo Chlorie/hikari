@@ -6,6 +6,13 @@
 
 namespace hkr
 {
+    enum class Clef : std::uint8_t
+    {
+        none,
+        bass,
+        treble
+    };
+
     class LilypondConverter final
     {
     public:
@@ -15,8 +22,13 @@ namespace hkr
 
     private:
         const Music& music_;
+        Time time_, partial_;
+        std::vector<Clef> clefs_;
         std::ostream* stream_ = nullptr;
 
-        void write_staff(std::size_t staff_idx) const;
+        void write_staff(std::size_t staff_idx);
+        void write_staff_section(std::size_t staff_idx, std::size_t section_idx);
+
+        void write_measure_attributes(const Measure::Attributes& attrs);
     };
 }

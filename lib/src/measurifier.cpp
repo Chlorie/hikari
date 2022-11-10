@@ -49,14 +49,14 @@ namespace hkr
                 auto& in_beat = in_staff[i];
                 if (beat_of_measure != 0 && !in_beat.attrs.is_null())
                 {
-                    const std::string pos = fmt::format("on beat {}, bar {} with {}/{} time", //
+                    const std::string pos = fmt::format("on beat {}, measure {} with {}/{} time", //
                         beat_of_measure + 1, n_measures_, partial.numerator, partial.denominator);
                     if (in_beat.attrs.time.has_value() || in_beat.attrs.partial.has_value())
-                        throw ParseError("Time signatures should only appear at the beginning of bars, "
+                        throw ParseError("Time signatures should only appear at the beginning of measures, "
                                          "but got a time signature " +
                             pos);
                     else
-                        throw ParseError("Key signatures should only appear at the beginning of bars, "
+                        throw ParseError("Key signatures should only appear at the beginning of measures, "
                                          "but got a key signature " +
                             pos);
                 }
@@ -79,7 +79,12 @@ namespace hkr
             if (++beat_of_measure == partial.numerator) // Last beat of current measure
                 beat_of_measure = 0;
         }
-        
-        return res;
+
+        if (beat_of_measure != 0 && &input != &input_.back())
+            throw ParseError(fmt::format("The section ends on an incomplete measure, beat {} of measure {} "
+                                         "with {}/{} time",
+                beat_of_measure, n_measures_, partial.numerator, partial.denominator));
+
+        return std::move(res);
     }
 } // namespace hkr

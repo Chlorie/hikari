@@ -192,8 +192,8 @@ namespace hkr
         {
             const auto idx = text.find('}');
             if (idx == npos)
-                throw ParseError(
-                    "A section is not closed by a right curly brace '}', starting " + pos_of(text).to_string());
+                throw ParseError("A section is not closed by a right curly brace '}', starting " + //
+                    pos_of(text).to_string());
             const auto res = text.substr(1, idx - 1);
             text.remove_prefix(idx + 1);
             return res;
@@ -386,7 +386,11 @@ namespace hkr
 
         // Fill current beat with rest if there's a delimiter
         if (text == "," && voice.empty())
-            voice.emplace_back();
+        {
+            voice.emplace_back().attributes = std::exchange(chord_attrs_, {});
+            beat.attrs.merge_with(measure_attrs_);
+            measure_attrs_ = {};
+        }
         // We've got notes, but no comma for ending the beat, err out
         else if (text.empty() && !voice.empty())
             throw ParseError("A beat should end with a comma, but a beat ends unexpectedly without the comma " +
