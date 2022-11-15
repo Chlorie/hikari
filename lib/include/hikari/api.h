@@ -8,5 +8,5 @@
 namespace hkr
 {
     HIKARI_API Music parse_music(std::string text);
-    HIKARI_API void export_to_lilypond(std::ostream& stream, const Music& music);
+    HIKARI_API void export_to_lilypond(std::ostream& stream, Music music);
 } // namespace hkr

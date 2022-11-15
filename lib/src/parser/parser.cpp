@@ -10,8 +10,6 @@
 
 namespace hkr
 {
-    // Music parse_music(std::string text) { return Parser(std::move(text)).parse(); }
-
     namespace
     {
         template <std::ranges::contiguous_range R>
@@ -256,7 +254,12 @@ namespace hkr
         const auto& staff = section.emplace_back();
         while (!text.empty())
             parse_voiced_segment(isolate_current_voiced_segment(text));
-        // Remove the empty staff, when the staff only contains null beats of attributes
+        // Remove the empty staff, when the staff only contains null beats of attributes.
+        // Null beats are beats with no chord in it (compared to "empty beats" which
+        // contain rests in them), used as a placeholder for temporarily saving end-of-beat
+        // measure attributes. Null beats should not exist in the final data structure,
+        // as they should be removed and gotten their attributes merged into the next beat
+        // once we have parsed the next beat.
         if (staff.empty() || staff[0].beat.empty())
             section.pop_back();
     }
@@ -386,15 +389,18 @@ namespace hkr
 
         // Fill current beat with rest if there's a delimiter
         if (text == "," && voice.empty())
-        {
             voice.emplace_back().attributes = std::exchange(chord_attrs_, {});
-            beat.attrs.merge_with(measure_attrs_);
-            measure_attrs_ = {};
+        else if (text.empty())
+        {
+            if (!voice.empty()) // We've got notes, but no comma for ending the beat, err out
+                throw ParseError("A beat should end with a comma, but a beat ends unexpectedly without the comma " +
+                    pos_of(text).to_string());
+            else // Apply measure attributes to the null beat
+            {
+                beat.attrs.merge_with(measure_attrs_);
+                measure_attrs_ = {};
+            }
         }
-        // We've got notes, but no comma for ending the beat, err out
-        else if (text.empty() && !voice.empty())
-            throw ParseError("A beat should end with a comma, but a beat ends unexpectedly without the comma " +
-                pos_of(text).to_string());
     }
 
     Chord Parser::parse_chord(std::string_view& text)

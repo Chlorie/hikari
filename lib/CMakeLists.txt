@@ -23,19 +23,22 @@ add_headers(HEADERS
 )
 add_sources(SOURCES
     # Source files here (relative to ./src/)
-    "lilypond_converter.h"
-    "lilypond_converter.cpp"
-    "measurifier.h"
-    "measurifier.cpp"
-    "parser.h"
-    "parser.cpp"
-    "parser_types.h"
-    "parser_types.cpp"
-    "preprocessor.h"
-    "preprocessor.cpp"
-    "tie_processor.h"
-    "tie_processor.cpp"
     "types.cpp"
+
+    "lilypond/indented_formatter.h"
+    "lilypond/indented_formatter.cpp"
+    "lilypond/music_converter.cpp"
+    "lilypond/music_formatter.cpp"
+    "lilypond/types.h"
+
+    "parser/measurifier.h"
+    "parser/measurifier.cpp"
+    "parser/parser.h"
+    "parser/parser.cpp"
+    "parser/parser_types.h"
+    "parser/parser_types.cpp"
+    "parser/preprocessor.h"
+    "parser/preprocessor.cpp"
 )
 
 find_package(clu CONFIG REQUIRED)

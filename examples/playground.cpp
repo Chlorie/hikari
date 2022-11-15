@@ -8,7 +8,9 @@ int main()
     try
     {
         const auto music = hkr::parse_music(R"(
-%120%
+%120,4/1%
+C,-,-,-,
+%4/4%
 {DEFG, E-CD, -, ,;,;,;,}
 %2/4,3s%,,%5/8,4f%,,,,,%3//8,0s%,,,%2/2%,,,,
 )");
