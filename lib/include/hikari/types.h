@@ -10,7 +10,17 @@ namespace hkr
 {
     // clang-format off
     enum class NoteBase : std::uint8_t { c, d, e, f, g, a, b };
+
+    enum class IntervalQuality : std::uint8_t { diminished, minor, perfect, major, augmented };
     // clang-format on
+
+    struct HIKARI_API Interval
+    {
+        int number = 1;
+        IntervalQuality quality = IntervalQuality::perfect;
+
+        int semitones() const;
+    };
 
     struct HIKARI_API Time
     {
@@ -26,6 +36,8 @@ namespace hkr
 
         Note transposed_up(int semitones) const noexcept;
         Note transposed_down(int semitones) const noexcept;
+        Note transposed_up(Interval interval) const noexcept;
+        Note transposed_down(Interval interval) const noexcept;
 
         std::int8_t pitch_id() const;
     };

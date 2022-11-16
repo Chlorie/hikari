@@ -17,6 +17,12 @@ namespace hkr
     using UnmeasuredSection = std::vector<UnmeasuredStaff>;
     using UnmeasuredMusic = std::vector<UnmeasuredSection>;
 
+    struct Transposition
+    {
+        Interval interval;
+        bool up = true;
+    };
+
     class Parser final
     {
     public:
@@ -29,26 +35,26 @@ namespace hkr
         UnmeasuredMusic music_;
         Measure::Attributes measure_attrs_;
         Chord::Attributes chord_attrs_;
-        int transposition_ = 0;
+        Transposition transposition_;
         int octave_ = 4;
 
         std::size_t offset_of(std::string_view view) const noexcept;
         TextPosition pos_of(std::string_view view, std::size_t offset = 0) const noexcept;
-        
+
         bool parse_attributes(std::string_view& text);
         void parse_one_attribute(std::string_view text);
         void parse_transposition(std::string_view text);
         void parse_time_signature(std::string_view text);
         void parse_key_signature(std::string_view text);
         void parse_tempo(std::string_view text);
-        void ensure_no_measure_attributess(TextPosition pos) const;
-        
+        void ensure_no_measure_attributes(TextPosition pos) const;
+
         std::string_view isolate_current_section(std::string_view& text) const;
         void parse_section(std::string_view text);
-        
+
         std::string_view isolate_current_staff(std::string_view& text) const;
         void parse_staff(std::string_view text);
-        
+
         std::string_view isolate_current_voiced_segment(std::string_view& text) const;
         void parse_voiced_segment(std::string_view text);
         void parse_voice(std::string_view text, std::size_t starting_beat, std::size_t voice_idx);

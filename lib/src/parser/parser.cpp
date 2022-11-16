@@ -89,7 +89,7 @@ namespace hkr
     {
         if (text.empty())
             throw ParseError("Empty attribute found " + pos_of(text).to_string());
-        if (text[0] == '#' || text[0] == 'b')
+        if (text[0] == '+' || text[0] == '-')
             parse_transposition(text);
         else if (text.find('/') != npos)
             parse_time_signature(text);
@@ -101,15 +101,37 @@ namespace hkr
 
     void Parser::parse_transposition(std::string_view text)
     {
-        const int sign = text[0] == '#' ? 1 : -1;
+        transposition_.up = text[0] == '+';
         text.remove_prefix(1);
+        if (text.empty())
+            throw ParseError("Transposition specifier unexpectedly ends " + pos_of(text).to_string());
+
+        const auto quality = [&]() -> IntervalQuality
+        {
+            using enum IntervalQuality;
+            switch (text[0])
+            {
+                case 'd': return diminished;
+                case 'm': return minor;
+                case 'P': return perfect;
+                case 'M': return major;
+                case 'A': return augmented;
+                default:
+                    throw ParseError(fmt::format("Expecting interval quality abbreviation, only 'd' for "
+                                                 "diminished, 'm' for minor, 'P' for perfect, 'M' for major, "
+                                                 "and 'A' for augmented is accepted, but found '{}' {}",
+                        text[0], pos_of(text).to_string()));
+            }
+        }();
+        text.remove_prefix(1);
+
         if (const auto opt = clu::parse<int>(text); //
-            !opt || *opt < -12 || *opt > 12)
-            throw ParseError(fmt::format("Expecting an integer between -12 and 12 after "
-                                         "transposition indicator '{}', but found '{}' {}",
-                sign == 1 ? '#' : 'b', text, pos_of(text).to_string()));
+            !opt || *opt < 1 || *opt > 8)
+            throw ParseError(fmt::format("Expecting an integer between 1 and 8 for the diatonic number "
+                                         "of the transposition interval, but found '{}' {}",
+                text, pos_of(text).to_string()));
         else
-            transposition_ = *opt;
+            transposition_.interval = {.number = *opt, .quality = quality};
     }
 
     void Parser::parse_time_signature(const std::string_view text)
@@ -171,7 +193,7 @@ namespace hkr
             chord_attrs_.tempo = tempo;
     }
 
-    void Parser::ensure_no_measure_attributess(const TextPosition pos) const
+    void Parser::ensure_no_measure_attributes(const TextPosition pos) const
     {
         if (measure_attrs_.time.has_value() || measure_attrs_.partial.has_value())
             throw ParseError("Time signatures should only appear at the beginning of "
@@ -384,12 +406,16 @@ namespace hkr
                 measure_attrs_ = {};
             }
             else // Got a measure attribute applied to a chord in the middle of a beat
-                ensure_no_measure_attributess(pos_of(text));
+                ensure_no_measure_attributes(pos_of(text));
         }
 
         // Fill current beat with rest if there's a delimiter
         if (text == "," && voice.empty())
+        {
             voice.emplace_back().attributes = std::exchange(chord_attrs_, {});
+            beat.attrs.merge_with(measure_attrs_);
+            measure_attrs_ = {};
+        }
         else if (text.empty())
         {
             if (!voice.empty()) // We've got notes, but no comma for ending the beat, err out
@@ -480,9 +506,9 @@ namespace hkr
         }();
 
         const Note written_note = Note{.base = base, .octave = octave_ + octave_diff, .accidental = accidental};
-        const Note note = transposition_ > 0 //
-            ? written_note.transposed_up(transposition_)
-            : written_note.transposed_down(-transposition_);
+        const Note note = transposition_.up //
+            ? written_note.transposed_up(transposition_.interval)
+            : written_note.transposed_down(transposition_.interval);
         try
         {
             (void)note.pitch_id();
@@ -490,9 +516,10 @@ namespace hkr
         catch (const std::out_of_range&)
         {
             const std::string_view note_view(full.data(), text.data());
-            throw ParseError(fmt::format("The note {} applied with a transposition of {} semitone(s) "
+            throw ParseError(fmt::format("The note {} applied with a transposition of {} semitone(s) {} "
                                          "gets a pitch id out of the range 0 to 127, {}",
-                note_view, transposition_, pos_of(full).to_string()));
+                note_view, transposition_.interval.semitones(), transposition_.up ? "upwards" : "downwards",
+                pos_of(full).to_string()));
         }
 
         return note;

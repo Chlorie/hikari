@@ -37,6 +37,33 @@ namespace hkr
         }
     } // namespace
 
+    int Interval::semitones() const
+    {
+        if (number < 1)
+            throw std::out_of_range("Interval number should be greater than 0");
+        const int octave_semitones = (number - 1) / 7 * 12;
+        const int simple = (number - 1) % 7; // Actually this is simple interval minus 1
+        const int qual = static_cast<int>(quality);
+        static constexpr int defaults[]{0, 2, 4, 5, 7, 9, 11};
+        static constexpr int modifier_2367[]{-2, -1, 0, 0, 1};
+        static constexpr int modifier_145[]{-1, 0, 0, 0, 1};
+        switch (simple)
+        {
+            case 0:
+            case 3:
+            case 4:
+                if (quality == IntervalQuality::major || quality == IntervalQuality::minor)
+                    throw std::runtime_error(
+                        "Intervals based on a unison/fourth/fifth cannot be of major or minor quality");
+                return octave_semitones + defaults[simple] + modifier_145[qual];
+            default:
+                if (quality == IntervalQuality::perfect)
+                    throw std::runtime_error(
+                        "Intervals based on a second/third/sixth/seventh cannot be of perfect quality");
+                return octave_semitones + defaults[simple] + modifier_2367[qual];
+        }
+    }
+
     Note Note::transposed_up(int semitones) const noexcept
     {
         if (semitones == 0)
@@ -61,6 +88,22 @@ namespace hkr
         semitones %= 12;
         static constexpr int intervals[]{0, -1, -1, -2, -2, -3, -3, -4, -5, -5, -6, -6};
         return transpose_up_impl(result, semitones, intervals[semitones]);
+    }
+
+    Note Note::transposed_up(Interval interval) const noexcept
+    {
+        Note result = *this;
+        result.octave += (interval.number - 1) / 7;
+        interval.number = (interval.number - 1) % 7 + 1;
+        return transpose_up_impl(result, interval.semitones(), interval.number - 1);
+    }
+
+    Note Note::transposed_down(Interval interval) const noexcept
+    {
+        Note result = *this;
+        result.octave -= (interval.number - 1) / 7;
+        interval.number = (interval.number - 1) % 7 + 1;
+        return transpose_up_impl(result, -interval.semitones(), 1 - interval.number);
     }
 
     std::int8_t Note::pitch_id() const
