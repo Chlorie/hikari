@@ -120,7 +120,7 @@ namespace hkr
                 default:
                     throw ParseError(fmt::format("Expecting interval quality abbreviation, only 'd' for "
                                                  "diminished, 'm' for minor, 'P' for perfect, 'M' for major, "
-                                                 "and 'A' for augmented is accepted, but found '{}' {}",
+                                                 "or 'A' for augmented is accepted, but found '{}' {}",
                         text[0], pos_of(text).to_string()));
             }
         }();

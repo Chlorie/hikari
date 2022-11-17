@@ -118,7 +118,9 @@ namespace hkr::ly
             {
                 if (i++ != 0)
                     file_.println("\\\\");
+                file_.print("{{ ");
                 write_voice(voice, measure.actual_time);
+                file_.print("}} ");
             }
             if (measure.voices.size() > 1)
                 file_.print(">>");
@@ -197,8 +199,8 @@ namespace hkr::ly
             }
 
             const Chord& chord = *chord_or_spacer;
-            if (chord.attributes.tempo)
-                file_.print("\\tempo 4={} ", *chord.attributes.tempo);
+            if (chord.attributes.tempo) // TODO: any chance to support non-integer tempi?
+                file_.print("\\tempo 4={} ", static_cast<int>(*chord.attributes.tempo));
 
             if (chord.notes.empty()) // rest
             {
