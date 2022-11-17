@@ -76,7 +76,7 @@ namespace hkr
                     n_measures_++;
                 }
             }
-            if (++beat_of_measure == partial.numerator) // Last beat of current measure
+            if (++beat_of_measure == static_cast<std::size_t>(partial.numerator)) // Last beat of current measure
                 beat_of_measure = 0;
         }
 
@@ -85,6 +85,6 @@ namespace hkr
                                          "with {}/{} time",
                 beat_of_measure, n_measures_, partial.numerator, partial.denominator));
 
-        return std::move(res);
+        return res;
     }
 } // namespace hkr

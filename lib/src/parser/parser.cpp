@@ -2,6 +2,7 @@
 
 #include <ranges>
 #include <algorithm>
+#include <utility>
 #include <fmt/format.h>
 #include <clu/parse.h>
 #include <clu/concepts.h>

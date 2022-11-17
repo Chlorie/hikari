@@ -6,3 +6,4 @@ function (add_example TGT)
 endfunction ()
 
 add_example(playground)
+add_example(hkr2ly)

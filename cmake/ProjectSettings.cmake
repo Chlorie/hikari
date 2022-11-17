@@ -34,7 +34,8 @@ function (target_set_warnings TGT ACCESS)
         -Wall -Wextra -Wpedantic
         -Wnon-virtual-dtor -Wold-style-cast -Wcast-align
         -Wunused -Woverloaded-virtual -Wconversion -Wsign-conversion
-        -Wnull-dereference -Wdouble-promotion -Wformat=2)
+        -Wnull-dereference -Wdouble-promotion -Wformat=2
+        -Wno-missing-field-initializers)
 
     if (WARNINGS_AS_ERRORS)
         set(MSVC_WARINGS ${MSVC_WARNINGS} /WX)
