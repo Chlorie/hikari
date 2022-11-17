@@ -157,10 +157,9 @@ namespace hkr::ly
                     default: break;
                 }
 
-                write_chord(chord.chord);
                 const auto duration =
                     (find_chord_end(chord) - chord.start) / measure_time.denominator * chord.tuplet.ratio;
-                write_duration(duration);
+                write_chord_with_duration(chord.chord, duration);
             }
         }
 
@@ -179,7 +178,17 @@ namespace hkr::ly
             }
         }
 
-        void write_chord(const std::optional<Chord>& chord_or_spacer)
+        void write_chord_with_duration(const std::optional<Chord>& chord_or_spacer, const clu::rational<int> duration)
+        {
+            write_chord_notes(chord_or_spacer);
+            write_duration(duration);
+            if (!chord_or_spacer)
+                return;
+            if (chord_or_spacer->sustained)
+                file_.print("~ ");
+        }
+
+        void write_chord_notes(const std::optional<Chord>& chord_or_spacer)
         {
             if (!chord_or_spacer) // spacer
             {
@@ -203,9 +212,6 @@ namespace hkr::ly
                 write_note(note);
             if (chord.notes.size() > 1)
                 file_.print("> ");
-
-            if (chord.sustained)
-                file_.print("~ ");
         }
 
         void write_note(const Note note)
