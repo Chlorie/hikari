@@ -502,7 +502,10 @@ namespace hkr
         {
             int res = 0;
             while (!text.empty() && (text[0] == '<' || text[0] == '>'))
-                res += consume_if_starts_with(text, '<') ? -1 : 1;
+            {
+                res += text[0] == '<' ? -1 : 1;
+                text.remove_prefix(1);
+            }
             return res;
         }();
 

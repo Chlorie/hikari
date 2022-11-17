@@ -121,6 +121,31 @@
             }
         },
         {
+            "name": "linux-gcc-release",
+            "displayName": "Linux Release (gcc)",
+            "description": "Target the Windows Subsystem for Linux (WSL) or a remote Linux system.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_TOOLCHAIN_FILE": {
+                    "value": "$env{HOME}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                    "type": "FILEPATH"
+                },
+                "_VCPKG_INSTALLED_DIR": "${sourceDir}/out/vcpkg_installed",
+                "HIKARI_BUILD_TESTS": "True",
+                "HIKARI_BUILD_EXAMPLES": "True"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": { "hostOS": [ "Linux" ] },
+                "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": {
+                    "sourceDir": "$env{HOME}/.vs/$ms{projectDirName}"
+                }
+            }
+        },
+        {
             "name": "linux-clang-debug",
             "displayName": "Linux Debug (clang)",
             "description": "Target the Windows Subsystem for Linux (WSL) or a remote Linux system.",

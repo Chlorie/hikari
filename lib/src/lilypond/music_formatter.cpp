@@ -55,15 +55,9 @@ namespace hkr::ly
                         file_.println("<<");
                         for (const auto& staff : music)
                         {
-                            {
-                                auto new_staff = file_.new_scope("\\new Staff \\with");
-                                file_.println(R"(midiInstrument = "acoustic grand")");
-                            }
-                            {
-                                auto staff_content = file_.new_scope("");
-                                file_.println("\\numericTimeSignature");
-                                write_staff(staff);
-                            }
+                            auto new_staff = file_.new_scope("\\new Staff");
+                            file_.println("\\numericTimeSignature");
+                            write_staff(staff);
                         }
                         file_.println(">>");
                     }
