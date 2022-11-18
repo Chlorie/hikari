@@ -18,7 +18,11 @@ namespace hkr::ly
                 }).staves.size();
             res_.reserve(n_staves);
             for (std::size_t i = 0; i < n_staves; i++)
-                res_.push_back(unroll_staff(i));
+            {
+                LyStaff& staff = res_.emplace_back(unroll_staff(i));
+                place_clef_changes(staff);
+                restructure_durations(staff);
+            }
             return std::move(res_);
         }
 
@@ -104,6 +108,18 @@ namespace hkr::ly
                     measure.voices[j].push_back(LyChord{.start = i});
                 i++;
             }
+        }
+
+        static void place_clef_changes(LyStaff& staff)
+        {
+            // TODO
+            (void)staff;
+        }
+
+        static void restructure_durations(LyStaff& staff)
+        {
+            // TODO
+            (void)staff;
         }
     };
 

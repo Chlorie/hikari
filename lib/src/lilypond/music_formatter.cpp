@@ -31,6 +31,14 @@ namespace hkr::ly
             file_.println(R"(\version "2.22.1")");
             file_.println(R"(\language "english")");
             {
+                auto single_voice = file_.new_scope("singleVoice = ");
+                file_.println("\\stemNeutral");
+                file_.println("\\tieNeutral");
+                file_.println("\\dotsNeutral");
+                file_.println("\\tupletNeutral");
+                file_.println("\\override Rest.voiced-position = 0");
+            }
+            {
                 auto score = file_.new_scope("\\score");
                 {
                     auto layout = file_.new_scope("\\layout");
@@ -38,6 +46,7 @@ namespace hkr::ly
                         auto ctx = file_.new_scope("\\context");
                         file_.println("\\Staff");
                         file_.println("\\override VerticalAxisGroup #'remove-first = ##t");
+                        file_.println(R"(\consists "Merge_rests_engraver")");
                     }
                     {
                         auto ctx = file_.new_scope("\\context");
@@ -70,10 +79,14 @@ namespace hkr::ly
 
         void write_staff(const LyStaff& staff)
         {
+            const auto n_max_staves = std::ranges::max(staff, std::less{}, //
+                [](const LyMeasure& measure) {
+                    return measure.voices.size();
+                }).voices.size();
             for (const auto& measure : staff)
             {
                 write_measure_attributes(measure.attributes);
-                write_measure(measure);
+                write_measure(measure, n_max_staves);
             }
         }
 
@@ -96,35 +109,49 @@ namespace hkr::ly
             }
         }
 
-        bool is_measure_empty(const LyMeasure& measure) const
+        static bool is_non_empty_voice(const LyVoice& voice)
         {
-            for (const auto& voice : measure.voices)
-                for (const auto& chord : voice)
-                    if (chord.chord && !chord.chord->notes.empty()) // Not rest or spacer
-                        return false;
-            return true;
+            return std::ranges::any_of(voice,
+                [](const LyChord& chord) noexcept //
+                { return chord.chord && !chord.chord->notes.empty(); });
         }
 
-        void write_measure(const LyMeasure& measure)
+        static std::size_t count_non_empty_voices(const LyMeasure& measure)
         {
-            if (is_measure_empty(measure)) // Just rests
+            std::size_t res = 0;
+            for (const auto& voice : measure.voices)
+                res += is_non_empty_voice(voice);
+            return res;
+        }
+
+        void write_measure(const LyMeasure& measure, const std::size_t n_max_staves)
+        {
+            const std::size_t n_non_empty_voices = count_non_empty_voices(measure);
+            if (n_non_empty_voices == 0) // Just rests
             {
                 file_.println("R{}*{}", measure.actual_time.denominator, measure.actual_time.numerator);
                 return;
             }
-            if (measure.voices.size() > 1)
-                file_.print("<< ");
+
+            file_.print("<< ");
             for (std::size_t i = 0; const auto& voice : measure.voices)
             {
                 if (i++ != 0)
                     file_.println("\\\\");
                 file_.print("{{ ");
-                write_voice(voice, measure.actual_time);
+
+                if (is_non_empty_voice(voice))
+                {
+                    if (n_non_empty_voices == 1)
+                        file_.print("\\singleVoice ");
+                    write_voice(voice, measure.actual_time);
+                }
+                else
+                    file_.print("s{}*{}", measure.actual_time.denominator, measure.actual_time.numerator);
+
                 file_.print("}} ");
             }
-            if (measure.voices.size() > 1)
-                file_.print(">>");
-            file_.println();
+            file_.println("{:\\>{}}>>", "", 2 * (n_max_staves - measure.voices.size()));
         }
 
         void write_voice(const LyVoice& voice, const Time measure_time)
