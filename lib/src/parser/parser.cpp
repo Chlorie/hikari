@@ -137,6 +137,7 @@ namespace hkr
 
     void Parser::parse_time_signature(const std::string_view text)
     {
+        // TODO: distinguish the two kinds of partial measures apart
         const auto [partial, num_view, den_view] = [&]
         {
             const auto slash = text.find('/'); // not npos

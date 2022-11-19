@@ -27,6 +27,7 @@ add_sources(SOURCES
 
     "lilypond/indented_formatter.h"
     "lilypond/indented_formatter.cpp"
+    "lilypond/music_converter.h"
     "lilypond/music_converter.cpp"
     "lilypond/music_formatter.cpp"
     "lilypond/types.h"

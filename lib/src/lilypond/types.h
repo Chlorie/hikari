@@ -8,10 +8,11 @@
 
 namespace hkr::ly
 {
+    // TODO: do we need 15ma or even 22ma?
     enum class Clef : std::uint8_t
     {
         none = 0,
-        bass_8vb,
+        bass_8va_bassa,
         bass,
         treble,
         treble_8va
@@ -44,7 +45,8 @@ namespace hkr::ly
 
     struct LyMeasure
     {
-        Time actual_time;
+        Time current_time;
+        Time current_partial;
         Measure::Attributes attributes;
         std::vector<LyVoice> voices;
     };

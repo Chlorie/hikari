@@ -33,6 +33,7 @@ namespace hkr::ly
             {
                 auto single_voice = file_.new_scope("singleVoice = ");
                 file_.println("\\stemNeutral");
+                // TODO: revert tie direction (^~ or _~) if it goes into a multi-voiced measure
                 file_.println("\\tieNeutral");
                 file_.println("\\dotsNeutral");
                 file_.println("\\tupletNeutral");
@@ -129,7 +130,7 @@ namespace hkr::ly
             const std::size_t n_non_empty_voices = count_non_empty_voices(measure);
             if (n_non_empty_voices == 0) // Just rests
             {
-                file_.println("R{}*{}", measure.actual_time.denominator, measure.actual_time.numerator);
+                file_.println("R{}*{}", measure.current_partial.denominator, measure.current_partial.numerator);
                 return;
             }
 
@@ -144,10 +145,10 @@ namespace hkr::ly
                 {
                     if (n_non_empty_voices == 1)
                         file_.print("\\singleVoice ");
-                    write_voice(voice, measure.actual_time);
+                    write_voice(voice, measure.current_partial);
                 }
                 else
-                    file_.print("s{}*{}", measure.actual_time.denominator, measure.actual_time.numerator);
+                    file_.print("s{}*{}", measure.current_partial.denominator, measure.current_partial.numerator);
 
                 file_.print("}} ");
             }
@@ -199,10 +200,10 @@ namespace hkr::ly
             file_.print("\\clef ");
             switch (clef)
             {
-                case Clef::bass_8vb: file_.print("bass_8 "); return;
+                case Clef::bass_8va_bassa: file_.print("\"bass_8\" "); return;
                 case Clef::bass: file_.print("bass "); return;
                 case Clef::treble: file_.print("treble "); return;
-                case Clef::treble_8va: file_.print("treble^8 "); return;
+                case Clef::treble_8va: file_.print("\"treble^8\" "); return;
                 default: clu::unreachable();
             }
         }

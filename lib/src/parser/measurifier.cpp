@@ -25,7 +25,7 @@ namespace hkr
     Section Measurifier::convert_section(UnmeasuredSection& input)
     {
         Section res;
-        Time time, partial;
+        Time partial;
         std::size_t beat_of_measure = 0;
 
         res.staves.resize(input.size());
@@ -67,12 +67,12 @@ namespace hkr
             {
                 res.measures.push_back({.start_beat = i, .attributes = attrs});
                 if (attrs.time)
-                    time = *attrs.time;
+                    time_ = *attrs.time;
                 if (attrs.partial) // Partial measures doesn't count toward the number
                     partial = *attrs.partial;
                 else
                 {
-                    partial = time;
+                    partial = time_;
                     n_measures_++;
                 }
             }

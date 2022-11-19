@@ -17,6 +17,7 @@ namespace hkr
 
         std::size_t n_measures_ = 0;
         UnmeasuredMusic input_;
+        Time time_;
         Music res_;
     };
 }
