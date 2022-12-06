@@ -378,15 +378,6 @@ namespace hkr::ly
             return static_cast<int>(v >> std::countr_zero(v));
         }
 
-        std::span<LyChord> from_range(LyVoice& voice, const RationalRange& range) noexcept
-        {
-            const auto begin = std::ranges::find_if(voice, //
-                [pos = range.begin](const LyChord& chord) { return chord.start >= pos; });
-            const auto end = std::ranges::find_if(voice, //
-                [pos = range.end](const LyChord& chord) { return chord.start >= pos; });
-            return {begin, end};
-        }
-
         std::span<const LyChord> from_range(const LyVoice& voice, const RationalRange& range) noexcept
         {
             const auto begin = std::ranges::find_if(voice, //
@@ -405,23 +396,36 @@ namespace hkr::ly
         }
 
         bool is_regular_chord(const LyChord& chord) noexcept { return has_single_bit(chord.start.denominator()); }
+
+        bool is_all_in_tuplet(const std::span<const LyChord> span) noexcept
+        {
+            return std::ranges::all_of(span, //
+                [](const LyChord& chord) noexcept { return chord.tuplet.pos != TupletGroupPosition::none; });
+        }
+
+        bool is_all_on_accepted_subdivisions(
+            const std::span<const LyChord> span, const RationalRange& range, const int subdivisions) noexcept
+        {
+            const auto accepted_minimum = (range.end - range.begin) / subdivisions;
+            return std::ranges::all_of(span,
+                [&](const LyChord& chord) noexcept
+                { return ((chord.start - range.begin) / accepted_minimum).denominator() == 1; });
+        }
     } // namespace
 
-    void DurationPartitioner::partition()
+    void DurationPartitioner::partition() const
     {
         for (LyVoice& voice : measure_.voices)
         {
-            // Merge rests and spacers
             merge_elements(voice, both_rest_or_spacer, [](const LyChord&, const LyChord&) noexcept {});
-            // if (check_use_one_note(voice))
-            //     continue;
             break_tuplets(voice);
 
             const int n_beats = measure_.current_time.numerator;
             const auto ratio = to_rational(measure_.current_time);
             const auto partial_ratio = to_rational(measure_.current_partial);
-            const auto initial = (partial_ratio - ratio) * measure_.current_time.denominator;
-            const auto last = partial_ratio * measure_.current_time.denominator;
+            const auto initial = (partial_ratio - ratio) * measure_.current_partial.denominator;
+            const clu::rational last = measure_.current_partial.numerator;
+            const clu::rational step(measure_.current_partial.denominator, measure_.current_time.denominator);
 
             if (const int irregular = without_trailing_zero(n_beats); irregular == 1) // regular
                 partite_regular(voice, {initial, last});
@@ -430,19 +434,19 @@ namespace hkr::ly
             else if (n_beats % 3 == 0) // irregular over 3
             {
                 for (int i = 0; i < n_beats; i += 3)
-                    partite_3beats(voice, {initial + i, initial + (i + 3)});
+                    partite_3beats(voice, {initial + i * step, initial + (i + 3) * step});
             }
             else if (n_beats % 3 == 1)
             {
-                partite_regular(voice, {initial, initial + 4});
+                partite_regular(voice, {initial, initial + 4 * step});
                 for (int i = 4; i < n_beats; i += 3)
-                    partite_3beats(voice, {initial + i, initial + (i + 3)});
+                    partite_3beats(voice, {initial + i * step, initial + (i + 3) * step});
             }
             else // n_beats % 3 == 2
             {
                 for (int i = 0; i < n_beats - 2; i += 3)
-                    partite_3beats(voice, {initial + i, initial + (i + 3)});
-                partite_regular(voice, {last - 2, last});
+                    partite_3beats(voice, {initial + i * step, initial + (i + 3) * step});
+                partite_regular(voice, {last - 2 * step, last});
             }
         }
     }
@@ -461,37 +465,118 @@ namespace hkr::ly
         return beats_no2 == 1 || beats_no2 == 3 || beats_no2 == 7;
     }
 
-    void DurationPartitioner::partite_regular(LyVoice& voice, const RationalRange& range)
+    void DurationPartitioner::partite_regular(LyVoice& voice, const RationalRange& range) const
     {
         if (range.end <= 0)
             return;
-        break_at(voice, range.end);
-        if (is_syncopated_4beat(voice, range))
+        break_at(voice, range.end, true);
+
+        const auto total_duration = (range.end - range.begin) / measure_.current_partial.denominator;
+        if (const auto span = from_range(voice, range); //
+            (is_syncopated_4beat(span, range) && total_duration <= 16) || //
+            is_all_in_tuplet(span) || //
+            (total_duration <= 4 && is_all_on_accepted_subdivisions(span, range, 4)))
             return;
+
+        const auto mid = (range.end + range.begin) / 2;
+        partite_regular(voice, {range.begin, mid});
+        partite_regular(voice, {mid, range.end});
     }
 
-    void DurationPartitioner::partite_regular_over_3(LyVoice& voice, const RationalRange& range, const int regular)
+    void DurationPartitioner::partite_regular_over_3(
+        LyVoice& voice, const RationalRange& range, const int regular) const
+    {
+        if (regular == 1)
+        {
+            partite_3beats(voice, range);
+            return;
+        }
+        if (range.end <= 0)
+            return;
+        break_at(voice, range.end, true);
+
+        const auto total_duration = (range.end - range.begin) / measure_.current_partial.denominator;
+        if (const auto span = from_range(voice, range); //
+            is_all_in_tuplet(span) || //
+            (total_duration <= 6 && is_all_on_accepted_subdivisions(span, range, 2)))
+            return;
+
+        const auto mid = (range.end + range.begin) / 2;
+        partite_regular_over_3(voice, {range.begin, mid}, regular / 2);
+        partite_regular_over_3(voice, {mid, range.end}, regular / 2);
+    }
+
+    void DurationPartitioner::partite_3beats(LyVoice& voice, const RationalRange& range) const
     {
         if (range.end <= 0)
             return;
-        break_at(voice, range.end);
-    }
+        break_at(voice, range.end, true);
 
-    void DurationPartitioner::partite_3beats(LyVoice& voice, const RationalRange& range)
-    {
-        if (range.end <= 0)
+        const auto total_duration = (range.end - range.begin) / measure_.current_partial.denominator;
+        const auto span = from_range(voice, range);
+        if (is_all_in_tuplet(span))
             return;
-        break_at(voice, range.end);
+
+        const auto accepted_minimum = (range.end - range.begin) / 6;
+        const auto midleft = (2 * range.begin + range.end) / 3, midright = (2 * range.end + range.begin) / 3;
+        bool should_break_left = false, should_break_right = false;
+        bool broken_at[7]{};
+        for (const LyChord& chord : span)
+        {
+            if (const auto multiple = (chord.start - range.begin) / accepted_minimum; //
+                multiple.denominator() == 1)
+                broken_at[multiple.numerator()] = true;
+            else
+            {
+                if (multiple < midright)
+                    should_break_left = true;
+                if (multiple > midleft)
+                    should_break_right = true;
+            }
+        }
+
+        should_break_left |= broken_at[2];
+        should_break_right |= broken_at[4];
+
+        // At least 2 beats should be shown if not just one note
+        if (!should_break_left && !should_break_right)
+        {
+            if (broken_at[1] && broken_at[3] && broken_at[5] && total_duration <= 24) // Syncopated 3-beat
+                return;
+            if (broken_at[3] || broken_at[5])
+                should_break_right = true;
+            else if (broken_at[1])
+                should_break_left = true;
+        }
+
+        // Break extremely long notes
+        if (total_duration > 12)
+            should_break_left = should_break_right = true;
+        else if (!should_break_left && !should_break_right && total_duration > 6)
+            should_break_right = true;
+
+        if (should_break_left)
+            partite_regular(voice, {range.begin, midleft});
+        if (should_break_right)
+        {
+            break_at(voice, midright, true);
+            partite_regular(voice, {midright, range.end});
+            if (should_break_left)
+                partite_regular(voice, {midleft, midright});
+        }
     }
 
-    void DurationPartitioner::break_at(LyVoice& voice, const clu::rational<int> pos) const
+    void DurationPartitioner::break_at(LyVoice& voice, const clu::rational<int> pos, const bool dont_break_tuplet) const
     {
-        if (pos == to_rational(measure_.current_partial) * measure_.current_time.denominator)
+        if (pos <= 0 || pos == measure_.current_partial.numerator)
             return;
         const auto iter = std::ranges::find_if(voice, [pos](const LyChord& chord) { return chord.start >= pos; });
         if (iter != voice.end() && iter->start == pos)
             return;
-        const auto inserted = voice.insert(iter, *std::prev(iter));
+        const auto prev = std::prev(iter);
+        if (dont_break_tuplet && prev->tuplet.pos != TupletGroupPosition::none)
+            return;
+        const auto inserted = voice.insert(iter, *prev);
         inserted->start = pos;
         if (auto& chord = inserted->chord)
             chord->attributes = {};
@@ -762,9 +847,8 @@ namespace hkr::ly
     void DurationPartitioner::break_tuplets(LyVoice& voice) const { TupletPartitioner(*this, voice).partition(); }
 
     // | 4/4: 8th 4th 4th 4th 8th |
-    bool DurationPartitioner::is_syncopated_4beat(const LyVoice& voice, const RationalRange& range) const
+    bool DurationPartitioner::is_syncopated_4beat(const std::span<const LyChord> span, const RationalRange& range) const
     {
-        const auto span = from_range(voice, range);
         if (span.size() != 5)
             return false;
         const auto half_beat = (range.end - range.begin) / 8;

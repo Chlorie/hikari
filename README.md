@@ -12,4 +12,4 @@ But due to the hackiness of the original code, the conversion from notation to s
 - [x] Macros
 - [x] Better diagnostics
 - [ ] Repeats
-- [ ] Conversion to Lilypond
+- [x] Conversion to Lilypond

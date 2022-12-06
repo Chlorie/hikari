@@ -68,7 +68,7 @@ namespace hkr::ly
     public:
         explicit DurationPartitioner(LyMeasure& measure): measure_(measure) {}
 
-        void partition();
+        void partition()const;
 
     private:
         class TupletPartitioner;
@@ -78,14 +78,14 @@ namespace hkr::ly
         // 2^n * (1|3|7)/2^k, use a single note for the whole measure
         bool check_use_one_note(const LyVoice& voice) const;
         // 2^n * 1/2^k, like 4/4 or 2/4
-        void partite_regular(LyVoice& voice, const RationalRange& range);
+        void partite_regular(LyVoice& voice, const RationalRange& range) const;
         // 2^n * 3/2^k, like 6/8 or 12/8
-        void partite_regular_over_3(LyVoice& voice, const RationalRange& range, int regular);
+        void partite_regular_over_3(LyVoice& voice, const RationalRange& range, int regular) const;
         // 3/2^k, like 3/4 or 3/8
-        void partite_3beats(LyVoice& voice, const RationalRange& range);
+        void partite_3beats(LyVoice& voice, const RationalRange& range) const;
 
-        void break_at(LyVoice& voice, clu::rational<int> pos) const;
+        void break_at(LyVoice& voice, clu::rational<int> pos, bool dont_break_tuplet = false) const;
         void break_tuplets(LyVoice& voice) const;
-        bool is_syncopated_4beat(const LyVoice& voice, const RationalRange& range) const;
+        bool is_syncopated_4beat(std::span<const LyChord> span, const RationalRange& range) const;
     };
 }
