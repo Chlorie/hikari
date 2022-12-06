@@ -1,12 +1,35 @@
 #include "music_converter.h"
 
 #include <algorithm>
+#include <functional>
+#include <numeric>
 #include <utility>
 #include <ranges>
 #include <clu/scope.h>
+#include <clu/concepts.h>
 
 namespace hkr::ly
 {
+    namespace
+    {
+        template <typename T, typename E, typename M>
+        void merge_elements(std::vector<T>& vec, E&& equal, M&& merger)
+        {
+            if (vec.empty())
+                return;
+            const auto end = vec.end();
+            auto iter = vec.begin(), new_end = iter;
+            while (++iter != end)
+            {
+                if (equal(*new_end, *iter))
+                    merger(*new_end, *iter);
+                else if (++new_end != iter)
+                    *new_end = std::move(*iter);
+            }
+            vec.erase(++new_end, end);
+        }
+    } // namespace
+
     LyMusic LyMusicConverter::convert()
     {
         const auto n_staves = std::ranges::max(music_, std::less{}, //
@@ -18,7 +41,8 @@ namespace hkr::ly
         {
             LyStaff& staff = res_.emplace_back(unroll_staff(i));
             ClefChangePlacer(staff).place();
-            // TODO: restructure durations
+            for (auto& measure : staff)
+                DurationPartitioner(measure).partition();
         }
         return std::move(res_);
     }
@@ -254,20 +278,11 @@ namespace hkr::ly
     void ClefChangePlacer::merge_simultaneous_chords()
     {
         for (auto& measure : measures_)
-        {
-            if (measure.chords.empty())
-                continue;
-            const auto end = measure.chords.end();
-            auto iter = measure.chords.begin(), new_end = iter;
-            while (++iter != end)
-            {
-                if (new_end->chord->start == iter->chord->start)
-                    new_end->range = merge_range(new_end->range, iter->range);
-                else if (++new_end != iter)
-                    *new_end = *iter;
-            }
-            measure.chords.erase(++new_end, end);
-        }
+            merge_elements(
+                measure.chords,
+                [](const ChordInfo& lhs, const ChordInfo& rhs) noexcept
+                { return lhs.chord->start == rhs.chord->start; },
+                [](ChordInfo& lhs, const ChordInfo& rhs) noexcept { lhs.range = merge_range(lhs.range, rhs.range); });
     }
 
     void ClefChangePlacer::find_clef_changes()
@@ -301,7 +316,7 @@ namespace hkr::ly
                         // On a whole beat, k == 0 means that this chord is the first to appear
                         // in the current staff (maybe preceded with rests)
                         // TODO: maybe prefer beat->half beat->quarter beat->... ?
-                        if (k==0 || ch.chord->start.denominator() == 1)
+                        if (k == 0 || ch.chord->start.denominator() == 1)
                             info = &ch;
                     }
                     // Find the last clef change
@@ -339,6 +354,431 @@ namespace hkr::ly
                     }
             }
         }
+    }
+
+    // Duration partition related utilities
+    namespace
+    {
+        bool has_single_bit(const int value) noexcept { return std::has_single_bit(static_cast<unsigned>(value)); }
+
+        clu::rational<int> to_rational(const Time time) noexcept { return {time.numerator, time.denominator}; }
+
+        bool both_rest_or_spacer(const LyChord& lhs, const LyChord& rhs) noexcept
+        {
+            if (lhs.chord.has_value() != rhs.chord.has_value())
+                return false;
+            if (!lhs.chord && !rhs.chord)
+                return true;
+            return lhs.chord->notes.empty() && rhs.chord->notes.empty();
+        }
+
+        int without_trailing_zero(const int value) noexcept
+        {
+            const auto v = static_cast<unsigned>(value);
+            return static_cast<int>(v >> std::countr_zero(v));
+        }
+
+        std::span<LyChord> from_range(LyVoice& voice, const RationalRange& range) noexcept
+        {
+            const auto begin = std::ranges::find_if(voice, //
+                [pos = range.begin](const LyChord& chord) { return chord.start >= pos; });
+            const auto end = std::ranges::find_if(voice, //
+                [pos = range.end](const LyChord& chord) { return chord.start >= pos; });
+            return {begin, end};
+        }
+
+        std::span<const LyChord> from_range(const LyVoice& voice, const RationalRange& range) noexcept
+        {
+            const auto begin = std::ranges::find_if(voice, //
+                [pos = range.begin](const LyChord& chord) { return chord.start >= pos; });
+            const auto end = std::ranges::find_if(voice, //
+                [pos = range.end](const LyChord& chord) { return chord.start >= pos; });
+            return {begin, end};
+        }
+
+        clu::rational<int> gcd(const clu::rational<int> lhs, const clu::rational<int> rhs) noexcept
+        {
+            const int d = std::lcm(lhs.denominator(), rhs.denominator());
+            const int ln = lhs.numerator() * (d / lhs.denominator());
+            const int rn = rhs.numerator() * (d / rhs.denominator());
+            return {std::gcd(ln, rn), d};
+        }
+
+        bool is_regular_chord(const LyChord& chord) noexcept { return has_single_bit(chord.start.denominator()); }
+    } // namespace
+
+    void DurationPartitioner::partition()
+    {
+        for (LyVoice& voice : measure_.voices)
+        {
+            // Merge rests and spacers
+            merge_elements(voice, both_rest_or_spacer, [](const LyChord&, const LyChord&) noexcept {});
+            // if (check_use_one_note(voice))
+            //     continue;
+            break_tuplets(voice);
+
+            const int n_beats = measure_.current_time.numerator;
+            const auto ratio = to_rational(measure_.current_time);
+            const auto partial_ratio = to_rational(measure_.current_partial);
+            const auto initial = (partial_ratio - ratio) * measure_.current_time.denominator;
+            const auto last = partial_ratio * measure_.current_time.denominator;
+
+            if (const int irregular = without_trailing_zero(n_beats); irregular == 1) // regular
+                partite_regular(voice, {initial, last});
+            else if (irregular == 3) // regular over 3
+                partite_regular_over_3(voice, {initial, last}, n_beats / irregular);
+            else if (n_beats % 3 == 0) // irregular over 3
+            {
+                for (int i = 0; i < n_beats; i += 3)
+                    partite_3beats(voice, {initial + i, initial + (i + 3)});
+            }
+            else if (n_beats % 3 == 1)
+            {
+                partite_regular(voice, {initial, initial + 4});
+                for (int i = 4; i < n_beats; i += 3)
+                    partite_3beats(voice, {initial + i, initial + (i + 3)});
+            }
+            else // n_beats % 3 == 2
+            {
+                for (int i = 0; i < n_beats - 2; i += 3)
+                    partite_3beats(voice, {initial + i, initial + (i + 3)});
+                partite_regular(voice, {last - 2, last});
+            }
+        }
+    }
+
+    // (1, 3, 7) * 2^n beats in the measure, just use one note
+    bool DurationPartitioner::check_use_one_note(const LyVoice& voice) const
+    {
+        if (voice.empty() || voice.size() == 1)
+            return true; // Filler or one note
+        if (std::ranges::all_of(
+                voice, [](const LyChord& chord) noexcept { return !chord.chord || chord.chord->notes.empty(); }))
+            return true; // All rests
+        if (to_rational(measure_.current_partial) != to_rational(measure_.current_time))
+            return false;
+        const auto beats_no2 = without_trailing_zero(measure_.current_time.numerator);
+        return beats_no2 == 1 || beats_no2 == 3 || beats_no2 == 7;
+    }
+
+    void DurationPartitioner::partite_regular(LyVoice& voice, const RationalRange& range)
+    {
+        if (range.end <= 0)
+            return;
+        break_at(voice, range.end);
+        if (is_syncopated_4beat(voice, range))
+            return;
+    }
+
+    void DurationPartitioner::partite_regular_over_3(LyVoice& voice, const RationalRange& range, const int regular)
+    {
+        if (range.end <= 0)
+            return;
+        break_at(voice, range.end);
+    }
+
+    void DurationPartitioner::partite_3beats(LyVoice& voice, const RationalRange& range)
+    {
+        if (range.end <= 0)
+            return;
+        break_at(voice, range.end);
+    }
+
+    void DurationPartitioner::break_at(LyVoice& voice, const clu::rational<int> pos) const
+    {
+        if (pos == to_rational(measure_.current_partial) * measure_.current_time.denominator)
+            return;
+        const auto iter = std::ranges::find_if(voice, [pos](const LyChord& chord) { return chord.start >= pos; });
+        if (iter != voice.end() && iter->start == pos)
+            return;
+        const auto inserted = voice.insert(iter, *std::prev(iter));
+        inserted->start = pos;
+        if (auto& chord = inserted->chord)
+            chord->attributes = {};
+        if (auto& prev_tuplet = std::prev(inserted)->tuplet; //
+            prev_tuplet.pos == TupletGroupPosition::last)
+            inserted->tuplet.pos = std::exchange(prev_tuplet.pos, TupletGroupPosition::head);
+        if (auto& chord = std::prev(inserted)->chord)
+            chord->sustained = true;
+    }
+
+    class DurationPartitioner::TupletPartitioner
+    {
+    public:
+        explicit TupletPartitioner(const DurationPartitioner& parent, LyVoice& voice) noexcept:
+            parent_(parent), voice_(voice)
+        {
+        }
+
+        void partition() const
+        {
+            // To partition the tuplets out:
+            // 1. We find a segment in the voice s.t. the segment starts and ends with chords at regular
+            //    positions (k / 2^n) and all the other chords in which are irregular.
+            // 2. Maintain a list of potential "break points":
+            //    1) Find the gcd of position differences of adjacent chords in the segment, and
+            //       regularize the gcd (k / (2^n*p) -> k / 2^n).
+            //    2) Cut the segment into intervals of the same length, with the length being the
+            //       regularized gcd.
+            //    3) For each pair of regularly positioned markers (break points and the endings of the
+            //       segment)
+            //       a) ignore all the break points between them and recalculate the gcd, and
+            //       b) count the break points that don't lie on a multiple of such gcd.
+            //    4) Find the pair with the largest count:
+            //       a) If such count is zero, goto 3.
+            //       b) Otherwise, remove all the counted break points from the list, and goto 3).
+            // 3. Break the voice with the final break point list.
+            break_tuplets();
+            set_tuplet_ratios();
+        }
+
+    private:
+        enum class Type
+        {
+            chord,
+            break_point,
+            placeholder
+        };
+
+        struct Position
+        {
+            clu::rational<int> start;
+            Type type;
+        };
+
+        const DurationPartitioner& parent_;
+        LyVoice& voice_;
+
+        using ChordIter = LyVoice::iterator;
+
+        void break_tuplets() const
+        {
+            auto iter = voice_.begin();
+            while (true)
+            {
+                iter = std::ranges::find_if(iter, voice_.end(), std::not_fn(is_regular_chord));
+                if (iter == voice_.end())
+                    break;
+                const auto end = std::ranges::find_if(iter, voice_.end(), is_regular_chord);
+                auto pos = construct_positions(std::prev(iter), end);
+                fill_break_points(pos);
+                while (remove_unnecessary_breaks_once(pos)) {}
+                const auto idx = std::distance(voice_.begin(), end); // end will be invalidated after the break
+                break_with_positions(pos);
+                iter = voice_.begin() + idx;
+            }
+        }
+
+        void set_tuplet_ratios() const
+        {
+            auto iter = voice_.begin();
+            while (true)
+            {
+                iter = std::ranges::find_if(iter, voice_.end(), std::not_fn(is_regular_chord));
+                if (iter == voice_.end())
+                    break;
+                const auto end = std::ranges::find_if(iter, voice_.end(), is_regular_chord);
+                set_tuplet_ratios_in_range(std::prev(iter), end);
+                const auto idx = std::distance(voice_.begin(), end); // end will be invalidated after the break
+                break_compound_durations(std::prev(iter), end);
+                iter = voice_.begin() + idx;
+            }
+        }
+
+        std::vector<Position> construct_positions(const ChordIter begin, const ChordIter end) const
+        {
+            const std::span subrange(begin, end);
+            std::vector<Position> pos;
+            pos.reserve(subrange.size() + 1);
+            for (const auto& chord : subrange)
+                pos.push_back({.start = chord.start, .type = Type::chord});
+            pos.push_back({
+                .start = end == voice_.end() ? parent_.measure_.current_partial.numerator : end->start,
+                .type = Type::chord //
+            });
+            return pos;
+        }
+
+        void fill_break_points(std::vector<Position>& pos) const
+        {
+            auto period = find_subrange_gcd(pos);
+            const auto den = static_cast<unsigned>(period.denominator());
+            const auto multi = den >> std::countr_zero(den);
+            period *= static_cast<int>(multi);
+
+            const auto begin = pos.front().start, end = pos.back().start;
+            for (auto i = begin + period; i < end; i += period)
+                pos.push_back({.start = i, .type = Type::break_point});
+
+            std::ranges::sort(pos, std::less{}, &Position::start);
+        }
+
+        bool remove_unnecessary_breaks_once(std::vector<Position>& pos) const
+        {
+            const auto is_regular_non_placeholder = [](const Position& p) noexcept
+            { return p.type != Type::placeholder && has_single_bit(p.start.denominator()); };
+
+            std::span<Position> best_subrange;
+            std::size_t max_breaks_removed = 0;
+
+            auto begin = pos.begin();
+            while (true)
+            {
+                begin = std::ranges::find_if(begin, pos.end(), is_regular_non_placeholder);
+                if (begin == pos.end())
+                    break;
+                auto end = std::next(begin);
+                while (true)
+                {
+                    end = std::ranges::find_if(end, pos.end(), is_regular_non_placeholder);
+                    if (end == pos.end())
+                        break;
+                    ++end;
+                    const std::span subrange{begin, end};
+                    if (const std::size_t count = count_unnecessary_breaks_in_range(subrange);
+                        count > max_breaks_removed)
+                    {
+                        max_breaks_removed = count;
+                        best_subrange = subrange;
+                    }
+                }
+                ++begin;
+            }
+
+            if (max_breaks_removed == 0)
+                return false;
+            remove_unnecessary_breaks_in_range(best_subrange);
+            return true;
+        }
+
+        void foreach_unnecessary_breaks_in_range( //
+            const std::span<Position> subrange, clu::callable<Position&> auto&& func) const
+        {
+            if (subrange.size() <= 1)
+                return;
+            const auto period = find_subrange_gcd(subrange);
+            for (auto& pos : subrange.subspan(1, subrange.size() - 2))
+            {
+                if (pos.type != Type::break_point)
+                    continue;
+                if (((pos.start - subrange[0].start) / period).denominator() != 1)
+                    func(pos);
+                // pos.type = Type::placeholder;
+            }
+        }
+
+        void remove_unnecessary_breaks_in_range(const std::span<Position> subrange) const
+        {
+            foreach_unnecessary_breaks_in_range( //
+                subrange, [](Position& pos) { pos.type = Type::placeholder; });
+        }
+
+        std::size_t count_unnecessary_breaks_in_range(const std::span<Position> subrange) const
+        {
+            std::size_t result = 0;
+            foreach_unnecessary_breaks_in_range(subrange, [&](auto&) { result++; });
+            return result;
+        }
+
+        void break_with_positions(const std::vector<Position>& pos) const
+        {
+            for (const auto& p : pos)
+                if (p.type == Type::break_point)
+                    parent_.break_at(voice_, p.start);
+        }
+
+        void set_tuplet_ratios_in_range(const ChordIter begin, const ChordIter end) const
+        {
+            const auto rational_bit_ceil = [](const clu::rational<int> value) noexcept
+            {
+                const int num = value.numerator(), den = value.denominator();
+                const int ceil = num / den + (num % den != 0);
+                const int ceil2 = static_cast<int>(std::bit_ceil(static_cast<unsigned>(ceil)));
+                return ceil2;
+            };
+
+            const auto period = find_subrange_gcd(construct_positions(begin, end));
+            auto ratio = 1 / period;
+            if (ratio.denominator() > ratio.numerator())
+                ratio *= rational_bit_ceil(period);
+            ratio /= rational_bit_ceil(ratio) / 2;
+
+            for (auto iter = begin; iter != end; ++iter)
+                iter->tuplet = {.ratio = ratio, .pos = TupletGroupPosition::head};
+            std::prev(end)->tuplet.pos = TupletGroupPosition::last;
+        }
+
+        void break_compound_durations(const ChordIter begin, const ChordIter end) const
+        {
+            std::vector<clu::rational<int>> breaks;
+            const Time partial = parent_.measure_.current_partial;
+            const auto factor = partial.denominator / begin->tuplet.ratio;
+            for (auto iter = begin; iter != end; ++iter)
+            {
+                auto pos = iter->start;
+                const auto end_pos = std::next(iter) == voice_.end() ? partial.numerator : std::next(iter)->start;
+                auto diff = (end_pos - pos) / factor;
+                while (diff > 4 && diff != 6)
+                {
+                    diff -= 4;
+                    pos += 4 * factor;
+                    breaks.push_back(pos);
+                }
+                while (diff.numerator() > 4 && diff.numerator() != 6) // 0, 1, 2, 3, 4, 6 -> end loop
+                {
+                    const int floor2 = static_cast<int>(std::bit_floor(static_cast<unsigned>(diff.numerator())));
+                    const clu::rational dur(floor2, diff.denominator());
+                    diff -= dur;
+                    pos += dur * factor;
+                    breaks.push_back(pos);
+                }
+            }
+            for (const auto p : breaks)
+                parent_.break_at(voice_, p);
+        }
+
+        clu::rational<int> find_subrange_gcd(const std::span<const Position> subrange) const
+        {
+            const auto endpoint_or_chord = [=](const Position& pos)
+            {
+                return pos.type == Type::chord || // chord
+                    &pos == subrange.data() || &pos == &(subrange.back()); // endpoint
+            };
+            auto starts = subrange | std::views::filter(endpoint_or_chord) | std::views::transform(&Position::start);
+            auto iter = starts.begin();
+            clu::rational res = 0;
+            auto prev = *iter++;
+            while (iter != starts.end())
+            {
+                const auto cur = *iter++;
+                const auto diff = cur - prev;
+                res = res == 0 ? diff : gcd(diff, res);
+                prev = cur;
+            }
+            return res;
+        }
+    };
+
+    void DurationPartitioner::break_tuplets(LyVoice& voice) const { TupletPartitioner(*this, voice).partition(); }
+
+    // | 4/4: 8th 4th 4th 4th 8th |
+    bool DurationPartitioner::is_syncopated_4beat(const LyVoice& voice, const RationalRange& range) const
+    {
+        const auto span = from_range(voice, range);
+        if (span.size() != 5)
+            return false;
+        const auto half_beat = (range.end - range.begin) / 8;
+        const auto not_rest = [](const LyChord& chord) noexcept { return chord.chord && !chord.chord->notes.empty(); };
+
+        if (span[0].start != range.begin)
+            return false;
+        if (span[1].start != range.begin + half_beat || !not_rest(span[1]))
+            return false;
+        if (span[2].start != range.begin + 3 * half_beat || !not_rest(span[2]))
+            return false;
+        if (span[3].start != range.begin + 5 * half_beat || !not_rest(span[3]))
+            return false;
+        return span[4].start == range.begin + 7 * half_beat;
     }
 
     LyMusic convert_to_ly(Music music) { return LyMusicConverter(std::move(music)).convert(); }

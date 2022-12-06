@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <algorithm>
-#include <clu/assertion.h>
 
 #include "indented_formatter.h"
 
@@ -19,6 +18,28 @@ namespace hkr::ly
     namespace
     {
         bool has_single_bit(const int value) noexcept { return std::has_single_bit(static_cast<unsigned>(value)); }
+
+        int ottava_marking(const Clef clef) noexcept
+        {
+            switch (clef)
+            {
+                case Clef::bass_8va_bassa: return -1;
+                case Clef::bass:
+                case Clef::treble: return 0;
+                case Clef::treble_8va: return 1;
+                default: return 0;
+            }
+        }
+
+        bool derived_from_treble(const Clef clef) noexcept
+        {
+            switch (clef)
+            {
+                case Clef::treble:
+                case Clef::treble_8va: return true;
+                default: return false;
+            }
+        }
     } // namespace
 
     class LyFormatter
@@ -77,9 +98,11 @@ namespace hkr::ly
 
     private:
         IndentedFormatter file_;
+        Clef current_clef_ = Clef::none;
 
         void write_staff(const LyStaff& staff)
         {
+            current_clef_ = Clef::none;
             const auto n_max_staves = std::ranges::max(staff, std::less{}, //
                 [](const LyMeasure& measure) {
                     return measure.voices.size();
@@ -165,31 +188,24 @@ namespace hkr::ly
             {
                 write_clef(chord.clef_change);
 
-                // Deal with tuplets
-                switch (chord.tuplet.pos)
+                if (chord.tuplet.pos == TupletGroupPosition::head && !in_tuplet)
                 {
-                    case TupletGroupPosition::head:
-                    {
-                        if (!in_tuplet)
-                        {
-                            in_tuplet = true;
-                            const auto ratio = chord.tuplet.ratio;
-                            file_.print("\\tuplet {}/{} {{ ", ratio.numerator(), ratio.denominator());
-                        }
-                        break;
-                    }
-                    case TupletGroupPosition::last:
-                    {
-                        file_.print("}} ");
-                        in_tuplet = false;
-                        break;
-                    }
-                    default: break;
+                    in_tuplet = true;
+                    const auto ratio = chord.tuplet.ratio;
+                    if (!has_single_bit(ratio.denominator()))
+                        file_.print("\\once \\override TupletNumber.text = #tuplet-number::calc-fraction-text ");
+                    file_.print("\\tuplet {}/{} {{ ", ratio.numerator(), ratio.denominator());
                 }
 
                 const auto duration =
                     (find_chord_end(chord) - chord.start) / measure_time.denominator * chord.tuplet.ratio;
                 write_chord_with_duration(chord.chord, duration);
+
+                if (chord.tuplet.pos == TupletGroupPosition::last)
+                {
+                    file_.print("}} ");
+                    in_tuplet = false;
+                }
             }
         }
 
@@ -197,15 +213,13 @@ namespace hkr::ly
         {
             if (clef == Clef::none)
                 return;
-            file_.print("\\clef ");
-            switch (clef)
-            {
-                case Clef::bass_8va_bassa: file_.print("\"bass_8\" "); return;
-                case Clef::bass: file_.print("bass "); return;
-                case Clef::treble: file_.print("treble "); return;
-                case Clef::treble_8va: file_.print("\"treble^8\" "); return;
-                default: clu::unreachable();
-            }
+            if (const auto is_treble = derived_from_treble(clef); //
+                current_clef_ == Clef::none || is_treble != derived_from_treble(current_clef_))
+                file_.print("\\clef {} ", is_treble ? "treble" : "bass");
+            if (const auto ottava = ottava_marking(clef); //
+                ottava != ottava_marking(current_clef_))
+                file_.print("\\ottava #{} ", ottava);
+            current_clef_ = clef;
         }
 
         void write_chord_with_duration(const std::optional<Chord>& chord_or_spacer, const clu::rational<int> duration)
