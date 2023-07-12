@@ -6,6 +6,7 @@
 
 #include "export.h"
 
+HIKARI_SUPPRESS_EXPORT_WARNING
 namespace hkr
 {
     // clang-format off
@@ -106,3 +107,4 @@ namespace hkr
 
     using Music = std::vector<Section>; ///< Music structure, containing multiple sections.
 } // namespace hkr
+HIKARI_RESTORE_EXPORT_WARNING

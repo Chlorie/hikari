@@ -3,6 +3,7 @@
 #include <bit>
 #include <algorithm>
 
+#include "hikari/api.h"
 #include "indented_formatter.h"
 
 namespace hkr

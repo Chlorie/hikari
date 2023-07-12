@@ -12,10 +12,14 @@ int main(const int argc, const char** argv)
     }
     try
     {
-        hkr::Music music = hkr::parse_music(clu::read_all_text(argv[1]));
-        std::ofstream out(argv[2]);
-        out.exceptions(std::ofstream::badbit | std::ofstream::failbit);
-        export_to_lilypond(out, std::move(music));
+        namespace fs = std::filesystem;
+        const fs::path in = argv[1];
+        const fs::path out = argv[2];
+        std::cout << "Input: " << in << "\nOutput: " << out << '\n';
+        hkr::Music music = hkr::parse_music(clu::read_all_text(in));
+        std::ofstream out_file(argv[2]);
+        out_file.exceptions(std::ofstream::badbit | std::ofstream::failbit);
+        export_to_lilypond(out_file, std::move(music));
         return 0;
     }
     catch (const std::exception& e)

@@ -1,5 +1,8 @@
 {
     "name": "hikari",
-    "version-string": "0.1.0",
-    "dependencies": ["clu", "fmt"]
+    "version-string": "0.1.1",
+    "dependencies": [
+        "clu",
+        "fmt"
+    ]
 }

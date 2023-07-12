@@ -5,6 +5,7 @@
 
 #include "types.h"
 
+HIKARI_SUPPRESS_EXPORT_WARNING
 namespace hkr
 {
     /**
@@ -22,3 +23,4 @@ namespace hkr
      */
     HIKARI_API void export_to_lilypond(std::ostream& stream, Music music);
 } // namespace hkr
+HIKARI_RESTORE_EXPORT_WARNING

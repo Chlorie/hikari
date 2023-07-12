@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(hikari LANGUAGES CXX VERSION 0.1.0)
+project(hikari LANGUAGES CXX VERSION 0.1.1)
 
 set(CMAKE_SCRIPTS "${PROJECT_SOURCE_DIR}/cmake")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SCRIPTS})
